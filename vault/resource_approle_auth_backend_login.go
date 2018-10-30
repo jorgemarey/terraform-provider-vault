@@ -150,6 +150,12 @@ func approleAuthBackendLoginRead(d *schema.ResourceData, meta interface{}) error
 	d.Set("lease_duration", resp.Data["lease_duration"])
 	d.Set("metadata", resp.Data["metadata"])
 	d.Set("accessor", resp.Data["accessor"])
+
+	if leaseExpiringSoon(d, client) {
+		log.Printf("[DEBUG] Token is about to expire %q not found, removing from state", d.Id())
+		d.SetId("")
+	}
+
 	return nil
 }
 

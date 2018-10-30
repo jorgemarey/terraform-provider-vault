@@ -710,7 +710,7 @@
 			"revisionTime": "2017-07-23T04:49:35Z"
 		},
 		{
-			"checksumSHA1": "5fWrCoK7RIYvC3bLuins/Y/NZfU=",
+			"checksumSHA1": "C1KKOxFoW7/W/NFNpiXK+boguNo=",
 			"origin": "github.com/hashicorp/terraform/vendor/golang.org/x/crypto/curve25519",
 			"path": "golang.org/x/crypto/curve25519",
 			"revision": "b6a464c5214d1378b74cf683c51feb876791e155",

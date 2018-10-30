@@ -15,16 +15,18 @@ Provides a resource for managing an
 
 ```hcl
 resource "vault_okta_auth_backend" "example" {
-    description = "Demonstration of the Terraform Okta auth backend"
+    description  = "Demonstration of the Terraform Okta auth backend"
     organization = "example"
-    token = "something that should be kept secret"
+    token        = "something that should be kept secret"
+    
     group {
         group_name = "foo"
-        policies = ["one", "two"]
+        policies   = ["one", "two"]
     }
+    
     user {
         username = "bar"
-        groups = ["foo"]
+        groups   = ["foo"]
     }
 }
 ```
@@ -43,6 +45,8 @@ The following arguments are supported:
 If this is not supplied only locally configured groups will be enabled.
 
 * `base_url` - (Optional) The Okta url. Examples: oktapreview.com, okta.com
+
+* `bypass_okta_mfa` - (Optional) When true, requests by Okta for a MFA check will be bypassed. This also disallows certain status checks on the account, such as whether the password is expired.
 
 * `ttl` - (Optional) Duration after which authentication will be expired.
 [See the documentation for info on valid duration formats](https://golang.org/pkg/time/#ParseDuration).

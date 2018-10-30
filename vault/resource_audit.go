@@ -12,8 +12,8 @@ import (
 func auditResource() *schema.Resource {
 	return &schema.Resource{
 		Create: auditWrite,
-		Delete: auditDelete,
 		Read:   auditRead,
+		Delete: auditDelete,
 		Importer: &schema.ResourceImporter{
 			State: schema.ImportStatePassthrough,
 		},
@@ -21,31 +21,32 @@ func auditResource() *schema.Resource {
 		Schema: map[string]*schema.Schema{
 			"path": {
 				Type:        schema.TypeString,
-				Required:    true,
+				Optional:    true,
+				Computed:    true,
 				ForceNew:    true,
-				Description: "Specifies the path in which to enable the audit device",
+				Description: "Path in which to enable the audit device",
 			},
 
 			"type": {
 				Type:        schema.TypeString,
 				Required:    true,
 				ForceNew:    true,
-				Description: "Specifies the type of the audit device",
+				Description: "Type of the audit device, such as 'file'",
 			},
 
 			"description": {
 				Type:        schema.TypeString,
 				Optional:    true,
-				Required:    false,
 				ForceNew:    true,
-				Description: "Specifies a human-friendly description of the audit device",
+				Description: "Human-friendly description of the audit device",
 			},
 
 			"options": {
 				Type:        schema.TypeMap,
-				Optional:    true,
+				Elem:        &schema.Schema{Type: schema.TypeString},
+				Required:    true,
 				ForceNew:    true,
-				Description: "Specifies configuration options to pass to the audit device itself. This is dependent on the audit device type",
+				Description: "Configuration options to pass to the audit device itself",
 			},
 
 			"local": {
@@ -64,23 +65,18 @@ func auditWrite(d *schema.ResourceData, meta interface{}) error {
 	client := meta.(*api.Client)
 
 	path := d.Get("path").(string)
-
-	log.Printf("[DEBUG] Creating audit %s in Vault", path)
-
-	options := map[string]string{}
-	if v, ok := d.GetOk("options"); ok {
-		optionsI, ok := v.(map[string]interface{})
-		if !ok {
-			return fmt.Errorf("error: options should be a map")
-		}
-		for k, v := range optionsI {
-			if vs, ok := v.(string); ok {
-				options[k] = vs
-			} else {
-				return fmt.Errorf("error: options should be a string -> string map")
-			}
-		}
+	if path == "" {
+		path = d.Get("type").(string)
 	}
+
+	optionsRaw := d.Get("options").(map[string]interface{})
+	options := make(map[string]string)
+
+	for k, v := range optionsRaw {
+		options[k] = v.(string)
+	}
+
+	log.Printf("[DEBUG] Enabling audit backend %s in Vault", path)
 
 	if err := client.Sys().EnableAudit(
 		path,
@@ -88,7 +84,7 @@ func auditWrite(d *schema.ResourceData, meta interface{}) error {
 		d.Get("description").(string),
 		options,
 	); err != nil {
-		return fmt.Errorf("error writing to Vault: %s", err)
+		return fmt.Errorf("error enabling audit backend: %s", err)
 	}
 
 	d.SetId(path)
@@ -101,10 +97,10 @@ func auditDelete(d *schema.ResourceData, meta interface{}) error {
 
 	path := d.Id()
 
-	log.Printf("[DEBUG] Removing audit %s from Vault", path)
+	log.Printf("[DEBUG] Unmounting %s from Vault", path)
 
 	if err := client.Sys().DisableAudit(path); err != nil {
-		return fmt.Errorf("error deleting from Vault: %s", err)
+		return fmt.Errorf("error disabling audit backend Vault: %s", err)
 	}
 
 	return nil
@@ -115,7 +111,7 @@ func auditRead(d *schema.ResourceData, meta interface{}) error {
 
 	path := d.Id()
 
-	log.Printf("[DEBUG] Reading audit %s from Vault", path)
+	log.Printf("[DEBUG] Reading audit backends %s from Vault", path)
 
 	audits, err := client.Sys().ListAudit()
 	if err != nil {
@@ -127,7 +123,7 @@ func auditRead(d *schema.ResourceData, meta interface{}) error {
 	// API always responds.
 	audit, ok := audits[strings.Trim(path, "/")+"/"]
 	if !ok {
-		log.Printf("[WARN] Audit %q not found, removing from state.", path)
+		log.Printf("[WARN] Audit backend %q not found, removing from state.", path)
 		d.SetId("")
 		return nil
 	}
@@ -136,9 +132,7 @@ func auditRead(d *schema.ResourceData, meta interface{}) error {
 	d.Set("type", audit.Type)
 	d.Set("description", audit.Description)
 	d.Set("local", audit.Local)
-	if audit.Options != nil { // This can be nil
-		d.Set("options", audit.Options)
-	}
+	d.Set("options", audit.Options)
 
 	return nil
 }

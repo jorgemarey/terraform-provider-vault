@@ -1,24 +1,37 @@
 ---
 layout: "vault"
 page_title: "Vault: vault_audit resource"
-sidebar_current: "docs-vault-resource-audit"
+sidebar_current: "docs-vault-audit"
 description: |-
-  Managing the audit backends in Vault
+  Writes audit backends for Vault
 ---
 
 # vault\_audit
 
-
-## Example Usage
+## Example Usage (file audit device)
 
 ```hcl
-resource "vault_audit" "syslog" {
-    path = "syslog"
-    type = "syslog"
-    options {
-        facility = "LOCAL0"
-        tag = "vault_audit"
-    }
+resource "vault_audit" "test" {
+  type = "file"
+
+  options = {
+    file_path = "C:/temp/audit.txt"
+  }
+}
+```
+
+## Example Usage (socket audit device)
+
+```hcl
+resource "vault_audit" "test" {
+  type = "socket"
+  path = "app_socket"
+
+  options = {
+    address     = "127.0.0.1:8000"
+    socket_type = "tcp"
+    description = "application x socket"
+  }
 }
 ```
 
@@ -26,12 +39,24 @@ resource "vault_audit" "syslog" {
 
 The following arguments are supported:
 
-* `path` - (Required) Specifies the path in which to enable the audit device
+* `type` - (Required) Type of the audit device, such as 'file'.
 
-* `type` - (Required) Specifies the type of the audit device
+* `path` - (optional) The path to mount the audit device. This defaults to the type.
 
-* `description` - (Optional) Specifies a human-friendly description of the audit device
+* `description` - (Optional) Human-friendly description of the audit device.
 
-* `options` - (Optional) Specifies configuration options to pass to the audit device itself. This is dependent on the audit device type
+* `options` - (Required) Configuration options to pass to the audit device itself.
 
-* `local` - (Optional) Specifies if the audit device is a local only
+For a reference of the device types and their options, consult the [Vault documentation.](https://www.vaultproject.io/docs/audit/index.html)
+
+## Attributes Reference
+
+No additional attributes are exported by this resource.
+
+## Import
+
+Audit devices can be imported using the `path`, e.g.
+
+```
+$ terraform import vault_audit.test syslog
+```

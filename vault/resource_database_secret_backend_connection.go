@@ -9,6 +9,7 @@ import (
 
 	"github.com/hashicorp/terraform/helper/schema"
 	"github.com/hashicorp/vault/api"
+	"github.com/terraform-providers/terraform-provider-vault/util"
 )
 
 var (
@@ -126,7 +127,7 @@ func databaseSecretBackendConnectionResource() *schema.Resource {
 					},
 				},
 				MaxItems:      1,
-				ConflictsWith: calculateConflictsWith("cassandra", dbBackendTypes),
+				ConflictsWith: util.CalculateConflictsWith("cassandra", dbBackendTypes),
 			},
 
 			"mongodb": {
@@ -143,7 +144,7 @@ func databaseSecretBackendConnectionResource() *schema.Resource {
 					},
 				},
 				MaxItems:      1,
-				ConflictsWith: calculateConflictsWith("mongodb", dbBackendTypes),
+				ConflictsWith: util.CalculateConflictsWith("mongodb", dbBackendTypes),
 			},
 
 			"hana": {
@@ -152,7 +153,7 @@ func databaseSecretBackendConnectionResource() *schema.Resource {
 				Description:   "Connection parameters for the hana-database-plugin plugin.",
 				Elem:          connectionStringResource(),
 				MaxItems:      1,
-				ConflictsWith: calculateConflictsWith("hana", dbBackendTypes),
+				ConflictsWith: util.CalculateConflictsWith("hana", dbBackendTypes),
 			},
 
 			"mssql": {
@@ -161,7 +162,7 @@ func databaseSecretBackendConnectionResource() *schema.Resource {
 				Description:   "Connection parameters for the mssql-database-plugin plugin.",
 				Elem:          connectionStringResource(),
 				MaxItems:      1,
-				ConflictsWith: calculateConflictsWith("mssql", dbBackendTypes),
+				ConflictsWith: util.CalculateConflictsWith("mssql", dbBackendTypes),
 			},
 
 			"mysql": {
@@ -170,7 +171,7 @@ func databaseSecretBackendConnectionResource() *schema.Resource {
 				Description:   "Connection parameters for the mysql-database-plugin plugin.",
 				Elem:          connectionStringResource(),
 				MaxItems:      1,
-				ConflictsWith: calculateConflictsWith("mysql", dbBackendTypes),
+				ConflictsWith: util.CalculateConflictsWith("mysql", dbBackendTypes),
 			},
 			"mysql_rds": {
 				Type:          schema.TypeList,
@@ -178,7 +179,7 @@ func databaseSecretBackendConnectionResource() *schema.Resource {
 				Description:   "Connection parameters for the mysql-rds-database-plugin plugin.",
 				Elem:          connectionStringResource(),
 				MaxItems:      1,
-				ConflictsWith: calculateConflictsWith("mysql_rds", dbBackendTypes),
+				ConflictsWith: util.CalculateConflictsWith("mysql_rds", dbBackendTypes),
 			},
 			"mysql_aurora": {
 				Type:          schema.TypeList,
@@ -186,7 +187,7 @@ func databaseSecretBackendConnectionResource() *schema.Resource {
 				Description:   "Connection parameters for the mysql-aurora-database-plugin plugin.",
 				Elem:          connectionStringResource(),
 				MaxItems:      1,
-				ConflictsWith: calculateConflictsWith("mysql_aurora", dbBackendTypes),
+				ConflictsWith: util.CalculateConflictsWith("mysql_aurora", dbBackendTypes),
 			},
 			"mysql_legacy": {
 				Type:          schema.TypeList,
@@ -194,7 +195,7 @@ func databaseSecretBackendConnectionResource() *schema.Resource {
 				Description:   "Connection parameters for the mysql-legacy-database-plugin plugin.",
 				Elem:          connectionStringResource(),
 				MaxItems:      1,
-				ConflictsWith: calculateConflictsWith("mysql_legacy", dbBackendTypes),
+				ConflictsWith: util.CalculateConflictsWith("mysql_legacy", dbBackendTypes),
 			},
 
 			"postgresql": {
@@ -203,7 +204,7 @@ func databaseSecretBackendConnectionResource() *schema.Resource {
 				Description:   "Connection parameters for the postgresql-database-plugin plugin.",
 				Elem:          connectionStringResource(),
 				MaxItems:      1,
-				ConflictsWith: calculateConflictsWith("postgresql", dbBackendTypes),
+				ConflictsWith: util.CalculateConflictsWith("postgresql", dbBackendTypes),
 			},
 
 			"oracle": {
@@ -212,7 +213,7 @@ func databaseSecretBackendConnectionResource() *schema.Resource {
 				Description:   "Connection parameters for the oracle-database-plugin plugin.",
 				Elem:          connectionStringResource(),
 				MaxItems:      1,
-				ConflictsWith: calculateConflictsWith("oracle", dbBackendTypes),
+				ConflictsWith: util.CalculateConflictsWith("oracle", dbBackendTypes),
 			},
 
 			"backend": {
@@ -358,15 +359,19 @@ func getDatabaseAPIData(d *schema.ResourceData) (map[string]interface{}, error) 
 	return data, nil
 }
 
-func getConnectionDetailsFromResponse(resp *api.Secret) []map[string]interface{} {
+func getConnectionDetailsFromResponse(d *schema.ResourceData, prefix string, resp *api.Secret) []map[string]interface{} {
 	details := resp.Data["connection_details"]
 	data, ok := details.(map[string]interface{})
 	if !ok {
 		return nil
 	}
 	result := map[string]interface{}{}
-	if v, ok := data["connection_url"]; ok {
+	if v, ok := d.GetOk(prefix + "connection_url"); ok {
 		result["connection_url"] = v.(string)
+	} else {
+		if v, ok := data["connection_url"]; ok {
+			result["connection_url"] = v.(string)
+		}
 	}
 	if v, ok := data["max_open_connections"]; ok {
 		n, err := v.(json.Number).Int64()
@@ -532,7 +537,7 @@ func databaseSecretBackendConnectionRead(d *schema.ResourceData, meta interface{
 			d.Set("cassandra", []map[string]interface{}{result})
 		}
 	case "hana-database-plugin":
-		d.Set("hana", getConnectionDetailsFromResponse(resp))
+		d.Set("hana", getConnectionDetailsFromResponse(d, "hana.0.", resp))
 	case "mongodb-database-plugin":
 		details := resp.Data["connection_details"]
 		data, ok := details.(map[string]interface{})
@@ -544,19 +549,19 @@ func databaseSecretBackendConnectionRead(d *schema.ResourceData, meta interface{
 			d.Set("mongodb", []map[string]interface{}{result})
 		}
 	case "mssql-database-plugin":
-		d.Set("mssql", getConnectionDetailsFromResponse(resp))
+		d.Set("mssql", getConnectionDetailsFromResponse(d, "mssql.0.", resp))
 	case "mysql-database-plugin":
-		d.Set("mysql", getConnectionDetailsFromResponse(resp))
+		d.Set("mysql", getConnectionDetailsFromResponse(d, "mysql.0.", resp))
 	case "mysql-rds-database-plugin":
-		d.Set("mysql_rds", getConnectionDetailsFromResponse(resp))
+		d.Set("mysql_rds", getConnectionDetailsFromResponse(d, "mysql_rds.0.", resp))
 	case "mysql-aurora-database-plugin":
-		d.Set("mysql_aurora", getConnectionDetailsFromResponse(resp))
+		d.Set("mysql_aurora", getConnectionDetailsFromResponse(d, "mysql_aurora.0.", resp))
 	case "mysql-legacy-database-plugin":
-		d.Set("mysql_legacy", getConnectionDetailsFromResponse(resp))
+		d.Set("mysql_legacy", getConnectionDetailsFromResponse(d, "mysql_legacy.0.", resp))
 	case "oracle-database-plugin":
-		d.Set("oracle", getConnectionDetailsFromResponse(resp))
+		d.Set("oracle", getConnectionDetailsFromResponse(d, "oracle.0.", resp))
 	case "postgresql-database-plugin":
-		d.Set("postgresql", getConnectionDetailsFromResponse(resp))
+		d.Set("postgresql", getConnectionDetailsFromResponse(d, "postgresql.0.", resp))
 	}
 
 	if err != nil {

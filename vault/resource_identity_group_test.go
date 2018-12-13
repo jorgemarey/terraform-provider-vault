@@ -4,99 +4,99 @@ import (
 	"encoding/json"
 	"fmt"
 	"strconv"
-	"strings"
 	"testing"
 
 	"github.com/hashicorp/terraform/helper/acctest"
 	"github.com/hashicorp/terraform/helper/resource"
 	"github.com/hashicorp/terraform/terraform"
 	"github.com/hashicorp/vault/api"
-	"github.com/terraform-providers/terraform-provider-vault/util"
 )
 
-func TestLDAPAuthBackendGroup_basic(t *testing.T) {
-	backend := acctest.RandomWithPrefix("tf-test-ldap-backend")
-	groupname := acctest.RandomWithPrefix("tf-test-ldap-group")
-
-	policies := []string{
-		acctest.RandomWithPrefix("policy"),
-		acctest.RandomWithPrefix("policy"),
-	}
+func TestAccIdentityGroup(t *testing.T) {
+	group := acctest.RandomWithPrefix("test-group")
 
 	resource.Test(t, resource.TestCase{
 		PreCheck:     func() { testAccPreCheck(t) },
 		Providers:    testProviders,
-		CheckDestroy: testLDAPAuthBackendGroupDestroy,
+		CheckDestroy: testAccCheckIdentityGroupDestroy,
 		Steps: []resource.TestStep{
 			{
-				Config: testLDAPAuthBackendGroupConfig_basic(backend, groupname, policies),
-				Check:  testLDAPAuthBackendGroupCheck_attrs(backend, groupname),
+				Config: testAccIdentityGroupConfig(group),
+				Check:  testAccIdentityGroupCheckAttrs(group),
 			},
 		},
 	})
 }
 
-func testLDAPAuthBackendGroupDestroy(s *terraform.State) error {
+func TestAccIdentityGroupUpdate(t *testing.T) {
+	group := acctest.RandomWithPrefix("test-group")
+
+	resource.Test(t, resource.TestCase{
+		PreCheck:     func() { testAccPreCheck(t) },
+		Providers:    testProviders,
+		CheckDestroy: testAccCheckIdentityGroupDestroy,
+		Steps: []resource.TestStep{
+			{
+				Config: testAccIdentityGroupConfig(group),
+				Check:  testAccIdentityGroupCheckAttrs(group),
+			},
+			{
+				Config: testAccIdentityGroupConfigUpdate(group),
+				Check: resource.ComposeTestCheckFunc(
+					testAccIdentityGroupCheckAttrs(group),
+					resource.TestCheckResourceAttr("vault_identity_group.group", "metadata.version", "2"),
+					resource.TestCheckResourceAttr("vault_identity_group.group", "policies.0", "dev"),
+					resource.TestCheckResourceAttr("vault_identity_group.group", "policies.1", "test"),
+				),
+			},
+		},
+	})
+}
+
+func testAccCheckIdentityGroupDestroy(s *terraform.State) error {
 	client := testProvider.Meta().(*api.Client)
 
 	for _, rs := range s.RootModule().Resources {
-		if rs.Type != "vault_ldap_auth_backend_group" {
+		if rs.Type != "vault_identity_group" {
 			continue
 		}
-		secret, err := client.Logical().Read(rs.Primary.ID)
+		secret, err := client.Logical().Read(identityGroupIDPath(rs.Primary.ID))
 		if err != nil {
-			return fmt.Errorf("error checking for ldap auth backend group %q: %s", rs.Primary.ID, err)
+			return fmt.Errorf("error checking for identity group %q: %s", rs.Primary.ID, err)
 		}
 		if secret != nil {
-			return fmt.Errorf("ldap auth backend group %q still exists", rs.Primary.ID)
+			return fmt.Errorf("identity group role %q still exists", rs.Primary.ID)
 		}
 	}
 	return nil
 }
 
-func testLDAPAuthBackendGroupCheck_attrs(backend, groupname string) resource.TestCheckFunc {
+func testAccIdentityGroupCheckAttrs(group string) resource.TestCheckFunc {
 	return func(s *terraform.State) error {
-		resourceState := s.Modules[0].Resources["vault_ldap_auth_backend_group.test"]
+		resourceState := s.Modules[0].Resources["vault_identity_group.group"]
 		if resourceState == nil {
 			return fmt.Errorf("resource not found in state")
 		}
 
 		instanceState := resourceState.Primary
 		if instanceState == nil {
-			return fmt.Errorf("resource has no primary instance")
+			return fmt.Errorf("resource not found in state")
 		}
 
-		endpoint := "auth/" + strings.Trim(backend, "/") + "/groups/" + groupname
-		if endpoint != instanceState.ID {
-			return fmt.Errorf("expected id to be %q, got %q instead", endpoint, instanceState.ID)
-		}
+		id := instanceState.ID
 
+		path := identityGroupIDPath(id)
 		client := testProvider.Meta().(*api.Client)
-		authMounts, err := client.Sys().ListAuth()
+		resp, err := client.Logical().Read(path)
 		if err != nil {
-			return err
-		}
-		authMount := authMounts[strings.Trim(backend, "/")+"/"]
-
-		if authMount == nil {
-			return fmt.Errorf("auth mount %s not present", backend)
-		}
-
-		if "ldap" != authMount.Type {
-			return fmt.Errorf("incorrect mount type: %s", authMount.Type)
-		}
-
-		resp, err := client.Logical().Read(instanceState.ID)
-		if err != nil {
-			return err
+			return fmt.Errorf("%q doesn't exist", path)
 		}
 
 		attrs := map[string]string{
+			"name":     "name",
 			"policies": "policies",
+			"type":     "type",
 		}
-
-		//return fmt.Errorf("%q", resp.Data)
-
 		for stateAttr, apiAttr := range attrs {
 			if resp.Data[apiAttr] == nil && instanceState.Attributes[stateAttr] == "" {
 				continue
@@ -106,7 +106,7 @@ func testLDAPAuthBackendGroupCheck_attrs(backend, groupname string) resource.Tes
 			case json.Number:
 				apiData, err := resp.Data[apiAttr].(json.Number).Int64()
 				if err != nil {
-					return fmt.Errorf("expected api field %s to be an int, was %q", apiAttr, resp.Data[apiAttr])
+					return fmt.Errorf("expected API field %s to be an int, was %q", apiAttr, resp.Data[apiAttr])
 				}
 				stateData, err := strconv.ParseInt(instanceState.Attributes[stateAttr], 10, 64)
 				if err != nil {
@@ -123,7 +123,6 @@ func testLDAPAuthBackendGroupCheck_attrs(backend, groupname string) resource.Tes
 					}
 					match = resp.Data[apiAttr] == stateData
 				}
-
 			case []interface{}:
 				apiData := resp.Data[apiAttr].([]interface{})
 				length := instanceState.Attributes[stateAttr+".#"]
@@ -140,51 +139,45 @@ func testLDAPAuthBackendGroupCheck_attrs(backend, groupname string) resource.Tes
 					if count != len(apiData) {
 						return fmt.Errorf("expected %s to have %d entries in state, has %d", stateAttr, len(apiData), count)
 					}
-
 					for i := 0; i < count; i++ {
-						found := false
-						for stateKey, stateValue := range instanceState.Attributes {
-							if strings.HasPrefix(stateKey, stateAttr) {
-								if apiData[i] == stateValue {
-									found = true
-									break
-								}
-							}
-						}
-						if !found {
-							return fmt.Errorf("expected item %d of %s (%s in state) of %q to be in state but wasn't", i, apiAttr, stateAttr, endpoint)
+						stateData := instanceState.Attributes[stateAttr+"."+strconv.Itoa(i)]
+						if stateData != apiData[i] {
+							return fmt.Errorf("expected item %d of %s (%s in state) of %q to be %q, got %q", i, apiAttr, stateAttr, path, stateData, apiData[i])
 						}
 					}
 					match = true
 				}
 			default:
 				match = resp.Data[apiAttr] == instanceState.Attributes[stateAttr]
-
 			}
 			if !match {
-				return fmt.Errorf("expected %s (%s in state) of %q to be %q, got %q", apiAttr, stateAttr, endpoint, instanceState.Attributes[stateAttr], resp.Data[apiAttr])
+				return fmt.Errorf("expected %s (%s in state) of %q to be %q, got %q", apiAttr, stateAttr, path, instanceState.Attributes[stateAttr], resp.Data[apiAttr])
 			}
-
 		}
-
 		return nil
 	}
 }
 
-func testLDAPAuthBackendGroupConfig_basic(backend, groupname string, policies []string) string {
-
+func testAccIdentityGroupConfig(groupName string) string {
 	return fmt.Sprintf(`
-
-resource "vault_auth_backend" "ldap" {
-    path = "%s"
-    type = "ldap"
+resource "vault_identity_group" "group" {
+  name = "%s"
+  type = "external"
+  policies = ["test"]
+  metadata = {
+    version = "1"
+  }
+}`, groupName)
 }
 
-resource "vault_ldap_auth_backend_group" "test" {
-    backend   = "${vault_auth_backend.ldap.path}"
-    groupname = "%s"
-    policies  = [%s]
-}
-`, backend, groupname, util.ArrayToTerraformList(policies))
-
+func testAccIdentityGroupConfigUpdate(groupName string) string {
+	return fmt.Sprintf(`
+resource "vault_identity_group" "group" {
+  name = "%s"
+  type = "internal"
+  policies = ["dev", "test"]
+  metadata = {
+    version = "2"
+  }
+}`, groupName)
 }
